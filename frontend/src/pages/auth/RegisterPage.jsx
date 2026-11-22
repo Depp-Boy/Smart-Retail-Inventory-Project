@@ -5,6 +5,9 @@ import { Input, PasswordInput } from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { validateRegistrationForm } from '../../utils/validators';
 
+import { useAuth } from '../../context/AuthContext';
+import { Alert } from '../../components/ui/Notification';
+
 const ACCOUNT_TYPES = [
   {
     value: 'shop',
@@ -21,6 +24,7 @@ const ACCOUNT_TYPES = [
 ];
 
 export default function RegisterPage() {
+  const { register, loading } = useAuth();
   const [form, setForm] = useState({
     fullName: '', email: '', phone: '', password: '', confirmPassword: '',
     accountType: '',
@@ -28,31 +32,41 @@ export default function RegisterPage() {
     warehouseName: '', warehouseAddress: '', warehouseLocation: '',
   });
   const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((f) => ({ ...f, [name]: value }));
     setErrors((err) => ({ ...err, [name]: '' }));
+    setServerError('');
   };
 
   const selectAccountType = (type) => {
     setForm((f) => ({ ...f, accountType: type }));
     setErrors((err) => ({ ...err, accountType: '' }));
+    setServerError('');
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setServerError('');
     const errs = validateRegistrationForm(form);
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
-      // Scroll to first error
       const firstError = document.querySelector('[data-error="true"]');
       firstError?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    setSubmitted(true);
+
+    const res = await register(form);
+    if (res.success) {
+      setSubmitted(true);
+    } else {
+      setServerError(res.error || 'Registration failed. Please check your details.');
+    }
   };
+
 
   if (submitted) {
     return (
@@ -66,14 +80,14 @@ export default function RegisterPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Registration submitted!</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Account Created!</h2>
           <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-            Thank you for registering. In the live system your account would be verified and
-            activated. This is a frontend-only demo — backend integration comes in the next phase.
+            Your account and location have been registered in the system. You can now sign in with your credentials.
           </p>
           <Link to="/login">
             <Button fullWidth>Go to Login</Button>
           </Link>
+
         </div>
       </div>
     );
@@ -95,7 +109,17 @@ export default function RegisterPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl p-8">
+          {serverError && (
+            <Alert
+              variant="error"
+              message={serverError}
+              className="mb-5"
+              onClose={() => setServerError('')}
+            />
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+
 
             {/* Personal Info */}
             <section>
@@ -217,7 +241,8 @@ export default function RegisterPage() {
               </section>
             )}
 
-            <Button type="submit" fullWidth size="lg">Create Account</Button>
+            <Button type="submit" fullWidth size="lg" loading={loading}>Create Account</Button>
+
           </form>
 
           <div className="mt-5 text-center">

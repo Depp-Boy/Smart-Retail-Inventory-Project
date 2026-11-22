@@ -137,3 +137,32 @@ class WorkerTaskService:
                 detail="Managers can view tasks only for their authorized warehouse.",
             )
         return self.repo.list_by_warehouse(warehouse_id, status=status)
+
+    def update_task_status_controlled(self, task_id: int, new_status: str, actor: User) -> WorkerTask:
+        """Controlled task status update with worker authorization enforcement."""
+        task = self.repo.get_by_id(task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found.")
+
+        # Worker isolation: workers can only update their own tasks
+        if actor.role == "WAREHOUSE_WORKER" and task.assigned_worker_id != actor.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Workers can only update their own assigned tasks.",
+            )
+
+        valid_statuses = {"PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"}
+        new_status = new_status.upper()
+        if new_status not in valid_statuses:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status '{new_status}'. Must be one of: {', '.join(sorted(valid_statuses))}",
+            )
+
+        task.status = new_status
+        if new_status == "COMPLETED":
+            task.completed_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(task)
+        return task
+

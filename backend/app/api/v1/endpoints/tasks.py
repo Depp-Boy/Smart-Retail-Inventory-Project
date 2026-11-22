@@ -8,6 +8,7 @@ from app.schemas.worker_task import (
     WorkerTaskCreateRequest,
     WorkerTaskProgressUpdate,
     WorkerTaskResponse,
+    WorkerTaskStatusUpdate,
 )
 from app.services.worker_task_service import WorkerTaskService
 
@@ -62,3 +63,16 @@ def update_task_progress(
 ):
     service = WorkerTaskService(db)
     return service.update_task_progress(task_id, task_item_id, req.completed_quantity, actor=current_user)
+
+
+@router.patch("/{task_id}/status", response_model=WorkerTaskResponse, summary="Update Task Status")
+def update_task_status(
+    task_id: int,
+    req: WorkerTaskStatusUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update the status of a worker task. Workers can only update their own tasks."""
+    service = WorkerTaskService(db)
+    return service.update_task_status_controlled(task_id, req.status, actor=current_user)
+

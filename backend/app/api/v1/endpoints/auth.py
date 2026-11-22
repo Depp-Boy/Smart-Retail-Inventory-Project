@@ -75,3 +75,21 @@ def logout(current_user: User = Depends(get_current_user)):
     return MessageResponse(
         message="Logout successful. Please discard your client-side access token."
     )
+
+
+@router.post("/seed-demo", summary="Seed Demo Accounts (Development Only)")
+def seed_demo(db: Session = Depends(get_db)):
+    """
+    Idempotent demo account seeder. Strictly works in development environments only.
+    Protected: rejects with 403 in production.
+    """
+    from app.core.config import get_settings
+    from fastapi import HTTPException
+    settings = get_settings()
+    if settings.is_production:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo seeding is strictly disabled in production environments.",
+        )
+    return AuthService.seed_demo_accounts(db)
+

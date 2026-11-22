@@ -56,8 +56,9 @@ def get_dispatch(
 def update_dispatch_status(
     dispatch_id: int,
     req: DispatchStatusUpdate,
-    current_user: User = Depends(require_roles("ADMIN", "WAREHOUSE_MANAGER")),
+    current_user: User = Depends(require_roles("ADMIN", "WAREHOUSE_MANAGER", "WAREHOUSE_WORKER")),
     db: Session = Depends(get_db),
 ):
     service = DispatchService(db)
     return service.update_status(dispatch_id, req, actor=current_user)
+

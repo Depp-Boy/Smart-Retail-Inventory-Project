@@ -9,6 +9,10 @@ class UserRegisterRequest(BaseModel):
     role: str = Field(..., description="SHOP_OWNER, WAREHOUSE_MANAGER, WAREHOUSE_WORKER, or ADMIN")
     location_id: Optional[int] = None
     phone: Optional[str] = None
+    location_name: Optional[str] = Field(default=None, max_length=255, description="Auto-create a location for this user if location_id is not provided")
+    location_type: Optional[str] = Field(default=None, description="SHOP or MAIN_WAREHOUSE")
+    location_address: Optional[str] = Field(default=None, description="Address for the auto-created location")
+
 
 
 class UserLoginRequest(BaseModel):

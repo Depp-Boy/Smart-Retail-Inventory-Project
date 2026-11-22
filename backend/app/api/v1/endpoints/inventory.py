@@ -5,7 +5,8 @@ from app.core.dependencies import get_current_user
 from app.database.session import get_db
 from app.models.user import User
 from app.repositories.inventory_repository import InventoryRepository
-from app.schemas.inventory import InventoryResponse, InventorySummaryResponse
+from app.schemas.inventory import InventoryResponse, InventorySummaryResponse, StockAdjustRequest
+from fastapi import HTTPException, status
 from app.services.inventory_service import InventoryService
 
 router = APIRouter()
@@ -55,3 +56,37 @@ def get_inventory_summary(
     """Aggregate KPI summary for stock levels, reserves, low-stock, and stockouts."""
     service = InventoryService(db)
     return service.get_summary(location_id)
+
+
+@router.post("/locations/{location_id}/adjust", response_model=InventoryResponse, summary="Controlled Stock Adjustment")
+def adjust_stock(
+    location_id: int,
+    req: StockAdjustRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Controlled stock adjustment for authorized users.
+    - SHOP_OWNER: can only adjust their own shop's stock.
+    - WAREHOUSE_MANAGER: can only adjust their own warehouse's stock.
+    - ADMIN: can adjust any location.
+    - WAREHOUSE_WORKER: not permitted.
+    """
+    if current_user.role == "WAREHOUSE_WORKER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Workers cannot adjust stock directly.",
+        )
+    if current_user.role in ("SHOP_OWNER", "WAREHOUSE_MANAGER") and current_user.location_id != location_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only adjust stock for your own assigned location.",
+        )
+
+    service = InventoryService(db)
+    return service.adjust_stock_controlled(
+        location_id=location_id,
+        product_id=req.product_id,
+        delta=req.delta,
+    )
+

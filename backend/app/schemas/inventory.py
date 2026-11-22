@@ -26,3 +26,9 @@ class InventorySummaryResponse(BaseModel):
     total_available_quantity: float
     low_stock_count: int
     out_of_stock_count: int
+
+
+class StockAdjustRequest(BaseModel):
+    product_id: int
+    delta: Decimal
+

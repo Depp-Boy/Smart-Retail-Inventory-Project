@@ -35,8 +35,13 @@ export default function LoginPage() {
   };
 
   const handleDemoLogin = async (demo) => {
+    setServerError('');
     const result = await login(demo.email, 'demo123', demo.role);
-    if (result.success) redirectByRole(demo.role);
+    if (result.success) {
+      redirectByRole(result.user.role);
+    } else {
+      setServerError(result.error || 'Failed to sign in to demo account.');
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -47,17 +52,14 @@ export default function LoginPage() {
       setErrors(validationErrors);
       return;
     }
-    // Demo: infer role from email pattern
-    let role = 'shop';
-    if (form.email.includes('manager') || form.email.includes('warehouse')) role = 'warehouse';
-    if (form.email.includes('worker')) role = 'worker';
-    const result = await login(form.email, form.password, role);
+    const result = await login(form.email, form.password);
     if (result.success) {
       redirectByRole(result.user.role);
     } else {
-      setServerError('Invalid credentials. Use the demo accounts below to explore.');
+      setServerError(result.error || 'Invalid credentials.');
     }
   };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4"

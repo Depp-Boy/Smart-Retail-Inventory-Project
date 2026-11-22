@@ -1,10 +1,12 @@
-﻿import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 
 // Layouts
 import PublicLayout from '../layouts/PublicLayout';
 import ShopLayout from '../layouts/ShopLayout';
 import WarehouseLayout from '../layouts/WarehouseLayout';
 import WorkerLayout from '../layouts/WorkerLayout';
+import ProtectedRoute from '../components/common/ProtectedRoute';
+
 
 // Public pages
 import LandingPage from '../pages/public/LandingPage';
@@ -80,7 +82,14 @@ export default function AppRoutes() {
       </Route>
 
       {/* Shop Owner */}
-      <Route path="/shop" element={<ShopLayout />}>
+      <Route
+        path="/shop"
+        element={
+          <ProtectedRoute allowedRoles={['shop', 'admin']}>
+            <ShopLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard"     element={<ShopDashboard />} />
         <Route path="inventory"     element={<ShopInventory />} />
@@ -96,7 +105,14 @@ export default function AppRoutes() {
       </Route>
 
       {/* Warehouse Manager */}
-      <Route path="/warehouse" element={<WarehouseLayout />}>
+      <Route
+        path="/warehouse"
+        element={
+          <ProtectedRoute allowedRoles={['warehouse', 'admin']}>
+            <WarehouseLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard"     element={<WarehouseDashboard />} />
         <Route path="inventory"     element={<WarehouseInventory />} />
@@ -112,7 +128,14 @@ export default function AppRoutes() {
       </Route>
 
       {/* Warehouse Worker */}
-      <Route path="/worker" element={<WorkerLayout />}>
+      <Route
+        path="/worker"
+        element={
+          <ProtectedRoute allowedRoles={['worker', 'admin']}>
+            <WorkerLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard"     element={<WorkerDashboard />} />
         <Route path="tasks"         element={<WorkerTasks />} />
@@ -122,6 +145,7 @@ export default function AppRoutes() {
         <Route path="notifications" element={<WorkerNotifications />} />
         <Route path="profile"       element={<WorkerProfile />} />
       </Route>
+
 
       {/* 404 */}
       <Route path="*" element={<NotFound />} />
