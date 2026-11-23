@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     stock_transfers,
     forecasts,
     alerts,
+    audit,
 )
 
 v1_router = APIRouter()
@@ -42,3 +43,4 @@ v1_router.include_router(tasks.router, prefix="/workers/tasks", tags=["Worker Ta
 v1_router.include_router(stock_transfers.router, prefix="/stock-transfers", tags=["Stock Transfers"])
 v1_router.include_router(forecasts.router, prefix="/forecasts", tags=["Forecasts"])
 v1_router.include_router(alerts.router, prefix="/alerts", tags=["Alerts"])
+v1_router.include_router(audit.router, prefix="/audit", tags=["Audit Logs"])

@@ -28,15 +28,18 @@ def create_task(
 @router.get("/", response_model=List[WorkerTaskResponse], summary="List Tasks for Current User")
 def list_my_tasks(
     status_filter: Optional[str] = Query(None, alias="status"),
+    warehouse_id: Optional[int] = Query(None),
+    worker_id: Optional[int] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     service = WorkerTaskService(db)
-    if current_user.role == "WAREHOUSE_WORKER":
-        return service.list_tasks_for_worker(current_user.user_id, actor=current_user, status=status_filter)
-    elif current_user.location_id:
-        return service.list_tasks_for_warehouse(current_user.location_id, actor=current_user, status=status_filter)
-    return []
+    return service.list_tasks(
+        actor=current_user,
+        status_filter=status_filter,
+        warehouse_id=warehouse_id,
+        worker_id=worker_id,
+    )
 
 
 @router.get("/{task_id}", response_model=WorkerTaskResponse, summary="Get Task Detail")
@@ -46,11 +49,7 @@ def get_task(
     db: Session = Depends(get_db),
 ):
     service = WorkerTaskService(db)
-    task = service.repo.get_by_id(task_id)
-    if not task:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found.")
-    return task
+    return service.get_task_by_id(task_id, actor=current_user)
 
 
 @router.patch("/{task_id}/items/{task_item_id}/progress", response_model=WorkerTaskResponse, summary="Update Task Item Progress")
@@ -72,7 +71,6 @@ def update_task_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Update the status of a worker task. Workers can only update their own tasks."""
+    """Update the status of a worker task with ownership, warehouse, and transition validation."""
     service = WorkerTaskService(db)
     return service.update_task_status_controlled(task_id, req.status, actor=current_user)
-
