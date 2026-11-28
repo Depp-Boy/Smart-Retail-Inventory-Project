@@ -8,6 +8,7 @@ from app.repositories.location_repository import ShopWarehouseRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.product_repository import ProductRepository
 from app.schemas.order import OrderCreateRequest
+from app.services.audit_service import AuditLogService
 
 
 class OrderService:
@@ -55,7 +56,21 @@ class OrderService:
             expected_delivery=req.expected_delivery,
             items=order_items_to_create,
         )
-        return self.order_repo.create(order)
+        created = self.order_repo.create(order)
+        AuditLogService.log_event(
+            event_type="ORDER_CREATED",
+            actor_id=user.user_id,
+            actor_role=user.role,
+            entity_type="ORDER",
+            entity_id=created.order_id,
+            location_id=created.shop_id,
+            details={
+                "total_amount": str(created.total_amount),
+                "item_count": len(created.items),
+                "status": created.status,
+            },
+        )
+        return created
 
     def cancel_order(self, user: User, order_id: int) -> Order:
         order = self.order_repo.get_by_id(order_id)
@@ -70,8 +85,19 @@ class OrderService:
                 detail=f"Order in status '{order.status}' cannot be cancelled.",
             )
 
+        previous_status = order.status
         order.status = "CANCELLED"
-        return self.order_repo.update(order)
+        updated = self.order_repo.update(order)
+        AuditLogService.log_event(
+            event_type="ORDER_CANCELLED",
+            actor_id=user.user_id,
+            actor_role=user.role,
+            entity_type="ORDER",
+            entity_id=updated.order_id,
+            location_id=updated.shop_id,
+            details={"previous_status": previous_status, "new_status": "CANCELLED"},
+        )
+        return updated
 
     def get_by_id(self, user: User, order_id: int) -> Order:
         order = self.order_repo.get_by_id(order_id)

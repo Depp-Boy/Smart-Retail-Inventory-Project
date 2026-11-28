@@ -4,15 +4,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import get_settings
 from app.database.connection import check_database_connection, get_engine
+from app.services.audit_service import AuditLogService
 from app.api.router import api_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Application startup: initialize database engine
+    # Application startup: initialize PostgreSQL engine & optional MongoDB audit client
     get_engine()
+    if get_settings().MONGODB_URL:
+        AuditLogService.initialize()
     yield
-    # Application shutdown: dispose connection pool
+    # Application shutdown: dispose PostgreSQL pool & close MongoDB client cleanly
+    AuditLogService.close_client()
     engine = get_engine()
     engine.dispose()
 

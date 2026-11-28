@@ -19,13 +19,12 @@ def list_dispatches(
     db: Session = Depends(get_db),
 ):
     service = DispatchService(db)
-    if order_id:
-        return service.list_by_order(order_id)
-    if warehouse_id:
-        return service.list_by_warehouse(warehouse_id, status=status_filter)
-    if current_user.location_id:
-        return service.list_by_warehouse(current_user.location_id, status=status_filter)
-    return []
+    return service.list_dispatches(
+        actor=current_user,
+        warehouse_id=warehouse_id,
+        order_id=order_id,
+        status_filter=status_filter,
+    )
 
 
 @router.post("/", response_model=DispatchResponse, status_code=status.HTTP_201_CREATED, summary="Create Dispatch")
@@ -45,11 +44,7 @@ def get_dispatch(
     db: Session = Depends(get_db),
 ):
     service = DispatchService(db)
-    dsp = service.repo.get_by_id(dispatch_id)
-    if not dsp:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispatch not found.")
-    return dsp
+    return service.get_dispatch(dispatch_id, actor=current_user)
 
 
 @router.patch("/{dispatch_id}/status", response_model=DispatchResponse, summary="Update Dispatch Status")
@@ -61,4 +56,3 @@ def update_dispatch_status(
 ):
     service = DispatchService(db)
     return service.update_status(dispatch_id, req, actor=current_user)
-

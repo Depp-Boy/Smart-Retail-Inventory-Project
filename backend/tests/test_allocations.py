@@ -4,7 +4,9 @@ from fastapi.testclient import TestClient
 from app.models.inventory import Inventory
 from app.models.location import Location
 from app.models.order import Order, OrderItem
+from app.models.reservation import StockReservation
 from app.models.shop_warehouse import ShopWarehouse
+from app.services.allocation_service import AllocationService
 
 
 def setup_order_and_warehouses(db_session, sample_locations, sample_product):
@@ -147,3 +149,147 @@ def test_cancel_allocation_reverts_state(client: TestClient, sample_locations, s
     db_session.expire_all()
     inv = db_session.query(Inventory).filter_by(location_id=data["wh1"].location_id, product_id=sample_product.product_id).first()
     assert float(inv.reserved_quantity) == 0.00
+
+
+def test_auto_allocation_respects_preferred_and_priority(db_session, sample_locations, sample_product, sample_users):
+    data = setup_order_and_warehouses(db_session, sample_locations, sample_product)
+    # WH1 is preferred (priority 1, stock 60), WH2 is priority 2 (stock 50).
+    # Add WH3 with priority 3 (stock 40) and WH2_higher with priority 1 (not preferred, stock 25),
+    # plus an unassociated warehouse with stock 100 that must be ignored.
+    wh_alt_high = Location(location_name="Alt High Priority WH", location_type="SUB_WAREHOUSE", address="Zone A")
+    wh_alt_low = Location(location_name="Alt Low Priority WH", location_type="SUB_WAREHOUSE", address="Zone C")
+    wh_unlinked = Location(location_name="Unlinked WH", location_type="MAIN_WAREHOUSE", address="Far Away")
+    db_session.add_all([wh_alt_high, wh_alt_low, wh_unlinked])
+    db_session.commit()
+
+    db_session.add_all([
+        ShopWarehouse(shop_id=data["shop"].location_id, warehouse_id=wh_alt_high.location_id, is_preferred=False, priority=1),
+        ShopWarehouse(shop_id=data["shop"].location_id, warehouse_id=wh_alt_low.location_id, is_preferred=False, priority=3),
+        Inventory(location_id=wh_alt_high.location_id, product_id=sample_product.product_id, quantity=Decimal("25.00"), reserved_quantity=Decimal("0.00")),
+        Inventory(location_id=wh_alt_low.location_id, product_id=sample_product.product_id, quantity=Decimal("40.00"), reserved_quantity=Decimal("0.00")),
+        Inventory(location_id=wh_unlinked.location_id, product_id=sample_product.product_id, quantity=Decimal("100.00"), reserved_quantity=Decimal("0.00")),
+    ])
+    db_session.commit()
+
+    # Order item requests 100: should take 60 from preferred WH1, 25 from alt priority=1, 15 from alt priority=2 (WH2)
+    service = AllocationService(db_session)
+    allocs = service.auto_allocate_order_item(data["item"].order_item_id, auto_reserve=True, actor=sample_users["admin"])
+
+    assert len(allocs) == 3
+    assert [(a.source_location_id, float(a.allocated_quantity)) for a in allocs] == [
+        (data["wh1"].location_id, 60.00),
+        (wh_alt_high.location_id, 25.00),
+        (data["wh2"].location_id, 15.00),
+    ]
+
+    db_session.expire_all()
+    item = db_session.query(OrderItem).filter_by(order_item_id=data["item"].order_item_id).first()
+    assert float(item.quantity_allocated) == 100.00
+    assert float(db_session.query(Inventory).filter_by(location_id=wh_unlinked.location_id).first().reserved_quantity) == 0.00
+
+
+def test_cancel_allocation_after_partial_dispatch_rejected(client: TestClient, sample_locations, sample_product, db_session, auth_headers):
+    data = setup_order_and_warehouses(db_session, sample_locations, sample_product)
+    headers = auth_headers("manager")
+
+    # Allocate 50 units from WH1 with auto_reserve=True (inv: qty=60, reserved=50)
+    alloc_res = client.post(
+        "/api/v1/allocations/",
+        headers=headers,
+        json={
+            "order_item_id": data["item"].order_item_id,
+            "source_location_id": data["wh1"].location_id,
+            "allocated_quantity": "50.00",
+            "auto_reserve": True,
+        },
+    )
+    assert alloc_res.status_code == 201
+    alloc_id = alloc_res.json()["allocation_id"]
+
+    # Partial dispatch of 20 units -> inv becomes qty=40, reserved=30; allocation remains RESERVED
+    dsp_res = client.post(
+        "/api/v1/dispatches/",
+        headers=headers,
+        json={
+            "order_id": data["order"].order_id,
+            "source_location_id": data["wh1"].location_id,
+            "items": [{"allocation_id": alloc_id, "product_id": sample_product.product_id, "quantity": "20.00"}],
+        },
+    )
+    assert dsp_res.status_code == 201
+
+    # Attempting to cancel allocation after partial dispatch must be rejected
+    cancel_res = client.post(f"/api/v1/allocations/{alloc_id}/cancel", headers=headers)
+    assert cancel_res.status_code == 400
+    assert "already been dispatched" in cancel_res.json()["detail"]
+
+    # Verify inventory, reservation, and order_item state are preserved untouched
+    db_session.expire_all()
+    inv = db_session.query(Inventory).filter_by(location_id=data["wh1"].location_id, product_id=sample_product.product_id).first()
+    assert float(inv.quantity) == 40.00
+    assert float(inv.reserved_quantity) == 30.00
+    item = db_session.query(OrderItem).filter_by(order_item_id=data["item"].order_item_id).first()
+    assert float(item.quantity_allocated) == 50.00
+    active_res = db_session.query(StockReservation).filter_by(allocation_id=alloc_id, status="ACTIVE").all()
+    assert len(active_res) == 1
+    assert float(active_res[0].quantity_reserved) == 30.00
+
+
+def test_cancel_allocation_releases_only_active_reservations_and_rejects_inconsistent_stock(
+    client: TestClient, sample_locations, sample_product, db_session, auth_headers
+):
+    data = setup_order_and_warehouses(db_session, sample_locations, sample_product)
+    headers = auth_headers("manager")
+
+    # Allocate 40 units without auto_reserve
+    alloc_res = client.post(
+        "/api/v1/allocations/",
+        headers=headers,
+        json={
+            "order_item_id": data["item"].order_item_id,
+            "source_location_id": data["wh1"].location_id,
+            "allocated_quantity": "40.00",
+            "auto_reserve": False,
+        },
+    )
+    assert alloc_res.status_code == 201
+    alloc_id = alloc_res.json()["allocation_id"]
+
+    # Create two reservations: 15 (to confirm) and 25 (kept active)
+    r1 = client.post("/api/v1/reservations/", headers=headers, json={"allocation_id": alloc_id, "quantity_reserved": "15.00"})
+    assert r1.status_code == 201
+    r2 = client.post("/api/v1/reservations/", headers=headers, json={"allocation_id": alloc_id, "quantity_reserved": "25.00"})
+    assert r2.status_code == 201
+
+    # Confirm r1 -> inv qty: 60->45, reserved: 40->25
+    confirm_res = client.post(f"/api/v1/reservations/{r1.json()['reservation_id']}/confirm", headers=headers)
+    assert confirm_res.status_code == 200
+
+    # Simulate corrupted inventory where reserved_quantity < active reservation (10 < 25)
+    inv = db_session.query(Inventory).filter_by(location_id=data["wh1"].location_id, product_id=sample_product.product_id).first()
+    inv.reserved_quantity = Decimal("10.00")
+    db_session.commit()
+
+    # Must reject with 409 rather than clamping to zero
+    bad_cancel = client.post(f"/api/v1/allocations/{alloc_id}/cancel", headers=headers)
+    assert bad_cancel.status_code == 409
+
+    # Restore consistent reserved_quantity=25 and cancel -> only ACTIVE r2 (25) is released; CONFIRMED r1 stays CONFIRMED
+    inv = db_session.query(Inventory).filter_by(location_id=data["wh1"].location_id, product_id=sample_product.product_id).first()
+    inv.reserved_quantity = Decimal("25.00")
+    db_session.commit()
+
+    ok_cancel = client.post(f"/api/v1/allocations/{alloc_id}/cancel", headers=headers)
+    assert ok_cancel.status_code == 200
+    assert ok_cancel.json()["status"] == "CANCELLED"
+
+    db_session.expire_all()
+    inv = db_session.query(Inventory).filter_by(location_id=data["wh1"].location_id, product_id=sample_product.product_id).first()
+    assert float(inv.quantity) == 45.00
+    assert float(inv.reserved_quantity) == 0.00
+    res_map = {
+        r.reservation_id: r.status
+        for r in db_session.query(StockReservation).filter_by(allocation_id=alloc_id).all()
+    }
+    assert res_map[r1.json()["reservation_id"]] == "CONFIRMED"
+    assert res_map[r2.json()["reservation_id"]] == "RELEASED"

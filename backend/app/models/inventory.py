@@ -1,10 +1,13 @@
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Numeric, func
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Numeric, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from app.models.base import Base, PK_TYPE
 
 
 class Inventory(Base):
     __tablename__ = "inventory"
+    __table_args__ = (
+        UniqueConstraint("location_id", "product_id", name="uq_location_product"),
+    )
 
     inventory_id = Column(PK_TYPE, primary_key=True, autoincrement=True)
     location_id = Column(BigInteger, ForeignKey("locations.location_id"), nullable=False)

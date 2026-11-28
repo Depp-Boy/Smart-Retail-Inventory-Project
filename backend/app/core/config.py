@@ -1,6 +1,6 @@
 ﻿from functools import lru_cache
 from typing import List
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,7 +12,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # Database
+    # Database (Primary Source of Truth: PostgreSQL / Supabase)
     DATABASE_URL: str = Field(
         default="postgresql://postgres:postgres@localhost:5432/postgres",
         description="PostgreSQL / Supabase connection string",
@@ -22,6 +22,22 @@ class Settings(BaseSettings):
     SUPABASE_URL: str | None = None
     SUPABASE_ANON_KEY: str | None = None
     SUPABASE_SERVICE_ROLE_KEY: str | None = None
+
+    # MongoDB (Secondary NoSQL Audit Log Store — Atlas mongodb+srv:// or local mongodb://)
+    MONGODB_URL: str | None = Field(
+        default=None,
+        description="Optional MongoDB connection URI for audit logging",
+    )
+    MONGODB_DB_NAME: str = Field(
+        default="smart_retail_audit",
+        description="MongoDB database name for audit logs",
+    )
+    MONGODB_COLLECTION_NAME: str = Field(
+        default="audit_logs",
+        description="MongoDB collection name for audit logs",
+    )
+    MONGODB_CONNECT_TIMEOUT_MS: int = Field(default=3000, ge=500, le=30000)
+    MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = Field(default=3000, ge=500, le=30000)
 
     # Application
     APP_NAME: str = "Smart Retail Inventory Management System"

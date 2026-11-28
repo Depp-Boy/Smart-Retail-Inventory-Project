@@ -7,14 +7,17 @@ class SaleRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_by_id(self, sale_id: int) -> Optional[Sale]:
-        return self.db.query(Sale).filter(Sale.sale_id == sale_id).first()
+    def get_by_id(self, sale_id: int, lock: bool = False) -> Optional[Sale]:
+        query = self.db.query(Sale).filter(Sale.sale_id == sale_id)
+        if lock:
+            query = query.with_for_update()
+        return query.first()
 
     def list(self, shop_id: Optional[int] = None, skip: int = 0, limit: int = 50) -> List[Sale]:
         query = self.db.query(Sale)
-        if shop_id:
+        if shop_id is not None:
             query = query.filter(Sale.shop_id == shop_id)
-        return query.order_by(Sale.sale_date.desc()).offset(skip).limit(limit).all()
+        return query.order_by(Sale.sale_date.desc(), Sale.sale_id.desc()).offset(skip).limit(limit).all()
 
     def create(self, sale: Sale) -> Sale:
         self.db.add(sale)

@@ -18,7 +18,7 @@ def list_active_reservations(
     db: Session = Depends(get_db),
 ):
     service = ReservationService(db)
-    return service.list_active(skip=skip, limit=limit)
+    return service.list_active(skip=skip, limit=limit, actor=current_user)
 
 
 @router.post("/", response_model=ReservationResponse, status_code=status.HTTP_201_CREATED, summary="Create Stock Reservation")
@@ -41,6 +41,16 @@ def release_reservation(
     return service.release_reservation(reservation_id, actor=current_user)
 
 
+@router.post("/{reservation_id}/expire", response_model=ReservationResponse, summary="Expire Reservation")
+def expire_reservation(
+    reservation_id: int,
+    current_user: User = Depends(require_roles("ADMIN", "WAREHOUSE_MANAGER")),
+    db: Session = Depends(get_db),
+):
+    service = ReservationService(db)
+    return service.expire_reservation(reservation_id, actor=current_user)
+
+
 @router.post("/{reservation_id}/confirm", response_model=ReservationResponse, summary="Confirm Reservation")
 def confirm_reservation(
     reservation_id: int,
@@ -48,7 +58,7 @@ def confirm_reservation(
     db: Session = Depends(get_db),
 ):
     service = ReservationService(db)
-    return service.confirm_reservation(reservation_id)
+    return service.confirm_reservation(reservation_id, actor=current_user)
 
 
 @router.get("/allocation/{allocation_id}", response_model=List[ReservationResponse], summary="List Reservations by Allocation")
@@ -58,4 +68,4 @@ def list_reservations_by_allocation(
     db: Session = Depends(get_db),
 ):
     service = ReservationService(db)
-    return service.list_by_allocation(allocation_id)
+    return service.list_by_allocation(allocation_id, actor=current_user)

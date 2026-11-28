@@ -13,6 +13,7 @@ from app.schemas.auth import (
     UserRegisterRequest,
     UserUpdateRequest,
 )
+from app.services.audit_service import AuditLogService
 
 VALID_ROLES = {"SHOP_OWNER", "WAREHOUSE_MANAGER", "WAREHOUSE_WORKER", "ADMIN"}
 
@@ -66,12 +67,31 @@ class AuthService:
             location_id=location_id,
             phone=req.phone.strip() if req.phone else None,
         )
-        return self.user_repo.create(new_user)
+        created_user = self.user_repo.create(new_user)
+        AuditLogService.log_event(
+            event_type="USER_REGISTERED",
+            actor_id=created_user.user_id,
+            actor_role=created_user.role,
+            entity_type="USER",
+            entity_id=created_user.user_id,
+            location_id=created_user.location_id,
+            details={"role": created_user.role},
+        )
+        return created_user
 
 
     def login(self, req: UserLoginRequest) -> TokenResponse:
         user = self.user_repo.get_by_email(req.email)
         if not user or not verify_password(req.password, user.password_hash):
+            AuditLogService.log_event(
+                event_type="AUTH_LOGIN_FAILED",
+                actor_id=user.user_id if user else None,
+                actor_role=user.role if user else None,
+                entity_type="USER",
+                entity_id=user.user_id if user else 0,
+                location_id=user.location_id if user else None,
+                details={"reason": "invalid_credentials"},
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password.",
@@ -83,6 +103,15 @@ class AuthService:
         token = create_access_token(
             data={"sub": str(user.user_id), "email": user.email, "role": user.role},
             expires_delta=expires,
+        )
+        AuditLogService.log_event(
+            event_type="AUTH_LOGIN_SUCCESS",
+            actor_id=user.user_id,
+            actor_role=user.role,
+            entity_type="USER",
+            entity_id=user.user_id,
+            location_id=user.location_id,
+            details={"role": user.role},
         )
         return TokenResponse(
             access_token=token,

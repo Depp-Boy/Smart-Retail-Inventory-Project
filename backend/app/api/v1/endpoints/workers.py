@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from app.core.dependencies import get_current_user, require_roles
 from app.database.session import get_db
@@ -18,7 +18,19 @@ def list_workers(
     db: Session = Depends(get_db),
 ):
     query = db.query(User).filter(User.role == "WAREHOUSE_WORKER")
-    if warehouse_id:
+    if current_user.role == "WAREHOUSE_MANAGER":
+        if current_user.location_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Warehouse manager is not assigned to a warehouse.",
+            )
+        if warehouse_id is not None and warehouse_id != current_user.location_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Warehouse managers can only list workers belonging to their own warehouse.",
+            )
+        query = query.filter(User.location_id == current_user.location_id)
+    elif warehouse_id is not None:
         query = query.filter(User.location_id == warehouse_id)
     return query.all()
 
