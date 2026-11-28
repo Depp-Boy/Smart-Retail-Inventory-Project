@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Package2, Store, Warehouse } from 'lucide-react';
+import { Package2, Store } from 'lucide-react';
 import { Input, PasswordInput } from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { validateRegistrationForm } from '../../utils/validators';
@@ -8,28 +8,12 @@ import { validateRegistrationForm } from '../../utils/validators';
 import { useAuth } from '../../context/AuthContext';
 import { Alert } from '../../components/ui/Notification';
 
-const ACCOUNT_TYPES = [
-  {
-    value: 'shop',
-    label: 'Shop Owner',
-    icon: Store,
-    desc: 'Manage retail inventory & place replenishment orders',
-  },
-  {
-    value: 'warehouse',
-    label: 'Warehouse Manager',
-    icon: Warehouse,
-    desc: 'Manage warehouse stock & fulfill shop requests',
-  },
-];
-
 export default function RegisterPage() {
   const { register, loading } = useAuth();
   const [form, setForm] = useState({
     fullName: '', email: '', phone: '', password: '', confirmPassword: '',
-    accountType: '',
+    accountType: 'shop',
     shopName: '', shopAddress: '', shopLocation: '',
-    warehouseName: '', warehouseAddress: '', warehouseLocation: '',
   });
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState('');
@@ -39,12 +23,6 @@ export default function RegisterPage() {
     const { name, value } = e.target;
     setForm((f) => ({ ...f, [name]: value }));
     setErrors((err) => ({ ...err, [name]: '' }));
-    setServerError('');
-  };
-
-  const selectAccountType = (type) => {
-    setForm((f) => ({ ...f, accountType: type }));
-    setErrors((err) => ({ ...err, accountType: '' }));
     setServerError('');
   };
 
@@ -67,7 +45,6 @@ export default function RegisterPage() {
     }
   };
 
-
   if (submitted) {
     return (
       <div
@@ -82,12 +59,11 @@ export default function RegisterPage() {
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Account Created!</h2>
           <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-            Your account and location have been registered in the system. You can now sign in with your credentials.
+            Your shop owner account and retail store location have been registered in the system. You can now sign in with your credentials.
           </p>
           <Link to="/login">
             <Button fullWidth>Go to Login</Button>
           </Link>
-
         </div>
       </div>
     );
@@ -104,8 +80,8 @@ export default function RegisterPage() {
           <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-2xl mb-4">
             <Package2 size={24} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Create your account</h1>
-          <p className="text-slate-400 text-sm mt-1">Join StockSense and manage your inventory smarter</p>
+          <h1 className="text-2xl font-bold text-white">Create your Shop Owner account</h1>
+          <p className="text-slate-400 text-sm mt-1">Join StockSense and manage your retail inventory smarter</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl p-8">
@@ -119,8 +95,6 @@ export default function RegisterPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-
-
             {/* Personal Info */}
             <section>
               <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-100">
@@ -154,95 +128,45 @@ export default function RegisterPage() {
               </div>
             </section>
 
-            {/* Account Type */}
+            {/* Account Type (Public Registration: Shop Owner Only) */}
             <section>
               <h3 className="text-sm font-semibold text-gray-700 mb-1 pb-2 border-b border-gray-100">
                 Account Type
               </h3>
               <p className="text-xs text-gray-500 mb-3">
-                Warehouse workers are added by their warehouse manager — they cannot self-register.
+                Public registration is available for Shop Owners only. Warehouse managers and warehouse workers are provisioned by authorized administrators or managers.
               </p>
-              <div className="grid grid-cols-2 gap-3" data-error={!!errors.accountType}>
-                {ACCOUNT_TYPES.map((type) => {
-                  const Icon = type.icon;
-                  const selected = form.accountType === type.value;
-                  return (
-                    <button
-                      key={type.value}
-                      type="button"
-                      onClick={() => selectAccountType(type.value)}
-                      className={[
-                        'p-4 rounded-xl border-2 text-left transition-all',
-                        selected
-                          ? 'border-blue-600 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50',
-                      ].join(' ')}
-                    >
-                      <Icon
-                        size={20}
-                        className={['mb-2', selected ? 'text-blue-600' : 'text-gray-400'].join(' ')}
-                      />
-                      <p className={['text-sm font-semibold', selected ? 'text-blue-700' : 'text-gray-700'].join(' ')}>
-                        {type.label}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">{type.desc}</p>
-                    </button>
-                  );
-                })}
+              <div className="p-4 rounded-xl border-2 border-blue-600 bg-blue-50 text-left">
+                <Store size={20} className="mb-2 text-blue-600" />
+                <p className="text-sm font-semibold text-blue-700">Shop Owner</p>
+                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                  Manage retail inventory, record POS sales, and place replenishment orders
+                </p>
               </div>
-              {errors.accountType && (
-                <p className="text-xs text-red-600 mt-1">{errors.accountType}</p>
-              )}
             </section>
 
             {/* Shop fields */}
-            {form.accountType === 'shop' && (
-              <section>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-100">
-                  Shop Details
-                </h3>
-                <div className="space-y-4">
-                  <Input
-                    label="Shop Name" name="shopName" placeholder="My Retail Store"
-                    value={form.shopName} onChange={handleChange} error={errors.shopName} required
-                  />
-                  <Input
-                    label="Shop Address" name="shopAddress" placeholder="123 Main Street, City"
-                    value={form.shopAddress} onChange={handleChange} error={errors.shopAddress} required
-                  />
-                  <Input
-                    label="Location / City" name="shopLocation" placeholder="Bangalore, Karnataka"
-                    value={form.shopLocation} onChange={handleChange}
-                  />
-                </div>
-              </section>
-            )}
+            <section>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-100">
+                Shop Details
+              </h3>
+              <div className="space-y-4">
+                <Input
+                  label="Shop Name" name="shopName" placeholder="My Retail Store"
+                  value={form.shopName} onChange={handleChange} error={errors.shopName} required
+                />
+                <Input
+                  label="Shop Address" name="shopAddress" placeholder="123 Main Street, City"
+                  value={form.shopAddress} onChange={handleChange} error={errors.shopAddress} required
+                />
+                <Input
+                  label="Location / City" name="shopLocation" placeholder="Bangalore, Karnataka"
+                  value={form.shopLocation} onChange={handleChange}
+                />
+              </div>
+            </section>
 
-            {/* Warehouse fields */}
-            {form.accountType === 'warehouse' && (
-              <section>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-100">
-                  Warehouse Details
-                </h3>
-                <div className="space-y-4">
-                  <Input
-                    label="Warehouse Name" name="warehouseName" placeholder="Central Warehouse"
-                    value={form.warehouseName} onChange={handleChange} error={errors.warehouseName} required
-                  />
-                  <Input
-                    label="Warehouse Address" name="warehouseAddress" placeholder="Industrial Area, Sector 5"
-                    value={form.warehouseAddress} onChange={handleChange} error={errors.warehouseAddress} required
-                  />
-                  <Input
-                    label="Location / City" name="warehouseLocation" placeholder="Bangalore, Karnataka"
-                    value={form.warehouseLocation} onChange={handleChange}
-                  />
-                </div>
-              </section>
-            )}
-
-            <Button type="submit" fullWidth size="lg" loading={loading}>Create Account</Button>
-
+            <Button type="submit" fullWidth size="lg" loading={loading}>Create Shop Owner Account</Button>
           </form>
 
           <div className="mt-5 text-center">

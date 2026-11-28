@@ -17,6 +17,11 @@ def get_session_factory() -> sessionmaker:
     return _SessionLocal
 
 
+def SessionLocal() -> Session:
+    """Create a new SQLAlchemy database session using the lazily initialized session factory."""
+    return get_session_factory()()
+
+
 def get_db() -> Generator[Session, None, None]:
     """
     FastAPI dependency yielding a scoped database session.

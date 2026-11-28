@@ -14,7 +14,7 @@ const SHIFTS = ["Morning Shift (06:00 AM - 02:30 PM)", "General Shift (09:00 AM 
 const TASK_TYPES = ["Picking", "Packing & Staging", "Forklift Operation", "Inventory Audit", "Bay Loading"];
 const PRIORITIES = ["High", "Normal", "Low"];
 
-const EMPTY_WORKER = { name: "", role: "", phone: "", email: "", shift: SHIFTS[1] };
+const EMPTY_WORKER = { name: "", role: "", phone: "", email: "", password: "", shift: SHIFTS[1] };
 const EMPTY_TASK = { assignedToWorkerId: "", taskType: TASK_TYPES[0], priority: PRIORITIES[1], dueDate: "", notes: "" };
 
 function WorkerCard({ worker }) {
@@ -71,6 +71,10 @@ export default function WarehouseWorkers() {
 
   const handleAddWorker = async (e) => {
     e.preventDefault();
+    if (!workerForm.password || workerForm.password.length < 6) {
+      toast.error("Please enter a password of at least 6 characters.");
+      return;
+    }
     setSaving(true);
     try {
       const worker = await warehouseService.addWorker(workerForm);
@@ -78,8 +82,11 @@ export default function WarehouseWorkers() {
       setAddOpen(false);
       setWorkerForm(EMPTY_WORKER);
       toast.success(`Worker ${worker.name} added.`);
-    } catch { toast.error("Failed to add worker."); }
-    finally { setSaving(false); }
+    } catch (err) {
+      toast.error(err?.detail || err?.message || "Failed to add worker.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAssignTask = async (e) => {
@@ -121,15 +128,22 @@ export default function WarehouseWorkers() {
       <Modal isOpen={addOpen} onClose={() => setAddOpen(false)} title="Add New Worker" size="md">
         <form onSubmit={handleAddWorker} className="space-y-4">
           {[
-            { key: "name", label: "Full Name", required: true },
-            { key: "role", label: "Role / Designation", required: true },
-            { key: "phone", label: "Phone Number" },
-            { key: "email", label: "Email Address" },
-          ].map(({ key, label, required }) => (
+            { key: "name", label: "Full Name", type: "text", required: true },
+            { key: "role", label: "Role / Designation", type: "text", required: true },
+            { key: "email", label: "Email Address", type: "email", required: true },
+            { key: "password", label: "Temporary Password", type: "password", required: true, minLength: 6 },
+            { key: "phone", label: "Phone Number", type: "tel" },
+          ].map(({ key, label, type, required, minLength }) => (
             <div key={key}>
               <label className="block text-sm font-medium text-gray-700 mb-1">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
-              <input value={workerForm[key] ?? ""} onChange={(e) => setWorkerForm((p) => ({ ...p, [key]: e.target.value }))} required={!!required}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input
+                type={type}
+                minLength={minLength}
+                value={workerForm[key] ?? ""}
+                onChange={(e) => setWorkerForm((p) => ({ ...p, [key]: e.target.value }))}
+                required={!!required}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
           ))}
           <div>

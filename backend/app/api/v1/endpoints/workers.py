@@ -5,10 +5,26 @@ from app.core.dependencies import get_current_user, require_roles
 from app.database.session import get_db
 from app.models.user import User
 from app.schemas.auth import UserProfileResponse
-from app.schemas.worker_task import WorkerTaskResponse
+from app.schemas.worker_task import WorkerCreateRequest, WorkerTaskResponse
 from app.services.worker_task_service import WorkerTaskService
 
 router = APIRouter()
+
+
+@router.post("/", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED, summary="Create Warehouse Worker")
+def create_worker(
+    req: WorkerCreateRequest,
+    current_user: User = Depends(require_roles("ADMIN", "WAREHOUSE_MANAGER")),
+    db: Session = Depends(get_db),
+):
+    """
+    Securely create a WAREHOUSE_WORKER account.
+    - ADMIN: can create a worker for any valid warehouse.
+    - WAREHOUSE_MANAGER: can create a worker only for their own warehouse.
+    - SHOP_OWNER and WAREHOUSE_WORKER: forbidden (403).
+    """
+    service = WorkerTaskService(db)
+    return service.create_worker(req, actor=current_user)
 
 
 @router.get("/", response_model=List[UserProfileResponse], summary="List Warehouse Workers")

@@ -592,3 +592,127 @@ def test_worker_dispatch_integration_and_no_double_stock_deduction(
     db_session.expire_all()
     inv = db_session.query(Inventory).filter_by(location_id=data["wh"].location_id, product_id=sample_product.product_id).first()
     assert float(inv.quantity) == 85.00
+
+
+def test_create_worker_authorization_password_hashing_and_audit(
+    client: TestClient, sample_locations, sample_users, db_session, auth_headers
+):
+    from unittest.mock import patch
+    import mongomock
+    from app.core.config import Settings
+    from app.core.security import verify_password
+    from app.services.audit_service import AuditLogService
+
+    wh1_id = sample_locations["warehouse"].location_id
+    shop_id = sample_locations["shop"].location_id
+
+    wh2 = Location(location_name="West Regional Hub", location_type="SUB_WAREHOUSE", address="Peenya Industrial Area")
+    db_session.add(wh2)
+    db_session.commit()
+    db_session.refresh(wh2)
+
+    mock_client = mongomock.MongoClient(tz_aware=True)
+    fake_settings = Settings(MONGODB_URL="mongodb://localhost:27017", MONGODB_DB_NAME="test_worker_audit")
+    AuditLogService.close_client()
+
+    with patch("app.services.audit_service.get_settings", return_value=fake_settings), patch.object(
+        AuditLogService, "_create_mongo_client", return_value=mock_client
+    ):
+        col = mock_client["test_worker_audit"]["audit_logs"]
+
+        # 1. SHOP_OWNER and WAREHOUSE_WORKER are forbidden (403)
+        for forbidden_role in ("shop_owner", "worker"):
+            r = client.post(
+                "/api/v1/workers/",
+                headers=auth_headers(forbidden_role),
+                json={"name": "Blocked Worker", "email": f"blocked_{forbidden_role}@test.com", "password": "WorkerPass123"},
+            )
+            assert r.status_code == 403
+
+        # 2. WAREHOUSE_MANAGER cannot create a worker in another warehouse (403)
+        cross_wh = client.post(
+            "/api/v1/workers/",
+            headers=auth_headers("manager"),
+            json={
+                "name": "Cross WH Worker",
+                "email": "crosswh@test.com",
+                "password": "WorkerPass123",
+                "location_id": wh2.location_id,
+            },
+        )
+        assert cross_wh.status_code == 403
+
+        # 3. WAREHOUSE_MANAGER creates a worker in their own warehouse (location_id inferred)
+        mgr_res = client.post(
+            "/api/v1/workers/",
+            headers=auth_headers("manager"),
+            json={
+                "name": "Kiran Picker",
+                "email": "kiran.picker@test.com",
+                "password": "KiranSecretPassword1",
+                "phone": "+91 98111 22222",
+            },
+        )
+        assert mgr_res.status_code == 201
+        mgr_body = mgr_res.json()
+        assert mgr_body["role"] == "WAREHOUSE_WORKER"
+        assert mgr_body["location_id"] == wh1_id
+        assert "password" not in mgr_body
+        assert "password_hash" not in mgr_body
+
+        # Verify password is stored hashed (never plaintext) and worker can log in
+        db_session.expire_all()
+        db_kiran = db_session.query(User).filter_by(email="kiran.picker@test.com").first()
+        assert db_kiran is not None
+        assert db_kiran.password_hash != "KiranSecretPassword1"
+        assert verify_password("KiranSecretPassword1", db_kiran.password_hash)
+        assert client.post("/api/v1/auth/login", json={"email": "kiran.picker@test.com", "password": "KiranSecretPassword1"}).status_code == 200
+
+        # Duplicate email rejected (400)
+        dup = client.post(
+            "/api/v1/workers/",
+            headers=auth_headers("manager"),
+            json={"name": "Dup Kiran", "email": "kiran.picker@test.com", "password": "AnotherPassword1"},
+        )
+        assert dup.status_code == 400
+
+        # 4. ADMIN creates a worker in WH2 (valid warehouse), rejected for SHOP location or missing location_id
+        assert client.post(
+            "/api/v1/workers/",
+            headers=auth_headers("admin"),
+            json={"name": "No WH Worker", "email": "nowh@test.com", "password": "AdminWorkerPass1"},
+        ).status_code == 400
+        assert client.post(
+            "/api/v1/workers/",
+            headers=auth_headers("admin"),
+            json={"name": "Shop Worker", "email": "shopw@test.com", "password": "AdminWorkerPass1", "location_id": shop_id},
+        ).status_code == 400
+
+        admin_res = client.post(
+            "/api/v1/workers/",
+            headers=auth_headers("admin"),
+            json={
+                "name": "Arjun Loader",
+                "email": "arjun.loader@test.com",
+                "password": "ArjunSecurePassword2",
+                "location_id": wh2.location_id,
+            },
+        )
+        assert admin_res.status_code == 201
+        assert admin_res.json()["role"] == "WAREHOUSE_WORKER"
+        assert admin_res.json()["location_id"] == wh2.location_id
+
+        # 5. Verify MongoDB WORKER_CREATED audit events were recorded without passwords
+        mgr_audit = col.find_one({"event_type": "WORKER_CREATED", "entity_id": mgr_body["user_id"]})
+        admin_audit = col.find_one({"event_type": "WORKER_CREATED", "entity_id": admin_res.json()["user_id"]})
+        assert mgr_audit is not None
+        assert mgr_audit["actor_role"] == "WAREHOUSE_MANAGER"
+        assert mgr_audit["location_id"] == wh1_id
+        assert "KiranSecretPassword1" not in str(mgr_audit)
+
+        assert admin_audit is not None
+        assert admin_audit["actor_role"] == "ADMIN"
+        assert admin_audit["location_id"] == wh2.location_id
+        assert "ArjunSecurePassword2" not in str(admin_audit)
+
+    AuditLogService.close_client()

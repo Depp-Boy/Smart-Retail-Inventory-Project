@@ -1,7 +1,18 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+
+class WorkerCreateRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=255)
+    email: EmailStr
+    password: str = Field(..., min_length=6, max_length=128)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    location_id: Optional[int] = Field(
+        default=None,
+        description="Warehouse location ID (required for ADMIN; automatically assigned from manager's warehouse for WAREHOUSE_MANAGER)",
+    )
 
 
 class WorkerTaskItemCreate(BaseModel):

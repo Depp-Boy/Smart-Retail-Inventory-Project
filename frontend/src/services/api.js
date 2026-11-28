@@ -180,6 +180,7 @@ export const dispatchesApi = {
 // ─── Workers & Tasks ──────────────────────────────────────────────────────────
 export const workersApi = {
   list: (params) => get('/workers', params),
+  create: (payload) => post('/workers', payload),
   listTasks: (workerId, params) => get(`/workers/${workerId}/tasks`, params),
   listWarehouseTasks: (warehouseId, params) =>
     get(`/workers/warehouse/${warehouseId}/tasks`, params),
