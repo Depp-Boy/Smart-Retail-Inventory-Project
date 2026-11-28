@@ -38,14 +38,7 @@ export function validateRegistrationForm(data) {
     errors.password = 'Password must be at least 8 characters with uppercase, lowercase, and a number';
   if (!isRequired(data.confirmPassword)) errors.confirmPassword = 'Please confirm your password';
   else if (data.password !== data.confirmPassword) errors.confirmPassword = 'Passwords do not match';
-  if (!isRequired(data.accountType)) errors.accountType = 'Please select an account type';
-  if (data.accountType === 'shop') {
-    if (!isRequired(data.shopName)) errors.shopName = 'Shop name is required';
-    if (!isRequired(data.shopAddress)) errors.shopAddress = 'Shop address is required';
-  }
-  if (data.accountType === 'warehouse') {
-    if (!isRequired(data.warehouseName)) errors.warehouseName = 'Warehouse name is required';
-    if (!isRequired(data.warehouseAddress)) errors.warehouseAddress = 'Warehouse address is required';
-  }
+  if (!isRequired(data.shopName)) errors.shopName = 'Shop name is required';
+  if (!isRequired(data.shopAddress)) errors.shopAddress = 'Shop address is required';
   return errors;
 }

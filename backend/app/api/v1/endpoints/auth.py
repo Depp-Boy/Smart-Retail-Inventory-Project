@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_roles
 from app.database.session import get_db
 from app.models.user import User
 from app.schemas.auth import (
@@ -77,14 +77,16 @@ def logout(current_user: User = Depends(get_current_user)):
     )
 
 
-@router.post("/seed-demo", summary="Seed Demo Accounts (Development Only)")
-def seed_demo(db: Session = Depends(get_db)):
+@router.post("/seed-demo", summary="Seed Demo Accounts (Admin, Development Only)")
+def seed_demo(
+    current_user: User = Depends(require_roles("ADMIN")),
+    db: Session = Depends(get_db),
+):
     """
-    Idempotent demo account seeder. Strictly works in development environments only.
-    Protected: rejects with 403 in production.
+    Idempotent demo account seeder.
+    Secured: requires authenticated ADMIN and strictly disabled in production environments.
     """
     from app.core.config import get_settings
-    from fastapi import HTTPException
     settings = get_settings()
     if settings.is_production:
         raise HTTPException(

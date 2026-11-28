@@ -399,27 +399,30 @@ export const warehouseService = {
   },
 
   async addWorker(workerForm) {
-    const whId = getCurrentWarehouseId();
-    const res = await api.auth.register({
-      name: workerForm.name,
-      email: workerForm.email,
-      password: workerForm.password || 'worker123',
-      role: 'WAREHOUSE_WORKER',
-      location_id: whId,
-      phone: workerForm.phone || null,
+    if (!workerForm?.password || workerForm.password.length < 6) {
+      throw new Error('A password of at least 6 characters is required to create a worker.');
+    }
+    const res = await api.workers.create({
+      name: workerForm.name.trim(),
+      email: workerForm.email.trim(),
+      password: workerForm.password,
+      phone: workerForm.phone?.trim() || null,
     });
     return {
       id: String(res.user_id),
       workerId: res.user_id,
       name: res.name,
       employeeCode: `EMP-W-${res.user_id}`,
-      role: 'Warehouse Associate',
+      workerCode: `EMP-W-${res.user_id}`,
+      role: workerForm.role?.trim() || 'Warehouse Associate',
       assignedZone: workerForm.assignedZone || 'Zone A',
       shift: workerForm.shift || 'Morning Shift',
-      phone: res.phone || workerForm.phone,
+      phone: res.phone || workerForm.phone || '',
       status: 'On Duty',
       activeTasksCount: 0,
       completedToday: 0,
+      completedTasksCount: 0,
+      rating: 5.0,
     };
   },
 

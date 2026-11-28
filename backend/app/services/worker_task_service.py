@@ -5,13 +5,16 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Set
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from app.core.security import hash_password
 from app.models.allocation import OrderAllocation
 from app.models.dispatch import Dispatch, DispatchItem
+from app.models.location import Location
 from app.models.order import OrderItem
 from app.models.user import User
 from app.models.worker_task import WorkerTask, WorkerTaskItem
+from app.repositories.user_repository import UserRepository
 from app.repositories.worker_task_repository import WorkerTaskRepository
-from app.schemas.worker_task import WorkerTaskCreateRequest
+from app.schemas.worker_task import WorkerCreateRequest, WorkerTaskCreateRequest
 from app.services.audit_service import AuditLogService
 
 VALID_TASK_TYPES: Set[str] = {"PICKING", "PACKING", "DISPATCH"}
@@ -37,6 +40,93 @@ class WorkerTaskService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = WorkerTaskRepository(db)
+        self.user_repo = UserRepository(db)
+
+    def create_worker(self, req: WorkerCreateRequest, actor: User) -> User:
+        """
+        Securely create a WAREHOUSE_WORKER account.
+        - ADMIN: must specify a valid warehouse location_id.
+        - WAREHOUSE_MANAGER: assigned strictly to their own warehouse; overriding location_id is rejected (403).
+        - SHOP_OWNER / WAREHOUSE_WORKER: forbidden (403).
+        """
+        if actor.role not in ("ADMIN", "WAREHOUSE_MANAGER"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only warehouse managers or admins can create warehouse worker accounts.",
+            )
+
+        if actor.role == "WAREHOUSE_MANAGER":
+            if actor.location_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Warehouse manager is not assigned to a warehouse.",
+                )
+            if req.location_id is not None and req.location_id != actor.location_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Warehouse managers can only create workers for their own warehouse.",
+                )
+            target_warehouse_id = actor.location_id
+        else:
+            if req.location_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Warehouse location_id must be specified when creating a worker as ADMIN.",
+                )
+            target_warehouse_id = req.location_id
+
+        normalized_email = req.email.lower().strip()
+        if self.user_repo.get_by_email(normalized_email):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"A user with email '{req.email}' is already registered.",
+            )
+
+        try:
+            warehouse = (
+                self.db.query(Location)
+                .filter(Location.location_id == target_warehouse_id)
+                .first()
+            )
+            if not warehouse:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Warehouse location {target_warehouse_id} not found.",
+                )
+            if warehouse.location_type not in ("MAIN_WAREHOUSE", "SUB_WAREHOUSE"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Location {target_warehouse_id} is not a valid warehouse.",
+                )
+
+            worker = User(
+                name=req.name.strip(),
+                email=normalized_email,
+                password_hash=hash_password(req.password),
+                role="WAREHOUSE_WORKER",
+                location_id=target_warehouse_id,
+                phone=req.phone.strip() if req.phone else None,
+            )
+            self.db.add(worker)
+            self.db.commit()
+            self.db.refresh(worker)
+        except Exception:
+            self.db.rollback()
+            raise
+
+        AuditLogService.log_event(
+            event_type="WORKER_CREATED",
+            actor_id=actor.user_id,
+            actor_role=actor.role,
+            entity_type="USER",
+            entity_id=worker.user_id,
+            location_id=target_warehouse_id,
+            details={
+                "created_role": "WAREHOUSE_WORKER",
+                "warehouse_id": target_warehouse_id,
+            },
+        )
+        return worker
 
     def _get_task_warehouse_id(self, task: WorkerTask) -> Optional[int]:
         if task.dispatch_id is not None:

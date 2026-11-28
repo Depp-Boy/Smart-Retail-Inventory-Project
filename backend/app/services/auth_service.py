@@ -16,6 +16,7 @@ from app.schemas.auth import (
 from app.services.audit_service import AuditLogService
 
 VALID_ROLES = {"SHOP_OWNER", "WAREHOUSE_MANAGER", "WAREHOUSE_WORKER", "ADMIN"}
+PUBLIC_REGISTRATION_ROLES = {"SHOP_OWNER"}
 
 
 class AuthService:
@@ -24,60 +25,74 @@ class AuthService:
         self.user_repo = UserRepository(db)
 
     def register(self, req: UserRegisterRequest) -> User:
-        role = req.role.upper()
+        role = req.role.strip().upper()
         if role not in VALID_ROLES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid role '{req.role}'. Supported roles are: {', '.join(sorted(VALID_ROLES))}",
             )
+        if role not in PUBLIC_REGISTRATION_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Public registration is restricted to SHOP_OWNER accounts. Role '{role}' cannot be self-registered.",
+            )
 
-        if self.user_repo.get_by_email(req.email):
+        normalized_email = req.email.lower().strip()
+        if self.user_repo.get_by_email(normalized_email):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"A user with email '{req.email}' is already registered.",
             )
 
-        location_id = req.location_id
-        if location_id is None and req.location_name and req.location_address:
-            loc_type = req.location_type or (
-                "SHOP" if role == "SHOP_OWNER" else
-                "MAIN_WAREHOUSE" if role in ("WAREHOUSE_MANAGER", "WAREHOUSE_WORKER") else "SHOP"
-            )
-            new_location = Location(
-                location_name=req.location_name.strip(),
-                location_type=loc_type.upper(),
-                address=req.location_address.strip(),
-            )
-            self.db.add(new_location)
-            self.db.flush()
-            location_id = new_location.location_id
-        elif location_id is not None:
-            location = self.db.query(Location).filter(Location.location_id == location_id).first()
-            if not location:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Location with ID {location_id} does not exist.",
+        try:
+            location_id = req.location_id
+            if location_id is None and req.location_name and req.location_address:
+                new_location = Location(
+                    location_name=req.location_name.strip(),
+                    location_type="SHOP",
+                    address=req.location_address.strip(),
                 )
+                self.db.add(new_location)
+                self.db.flush()
+                location_id = new_location.location_id
+            elif location_id is not None:
+                location = self.db.query(Location).filter(Location.location_id == location_id).first()
+                if not location:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Location with ID {location_id} does not exist.",
+                    )
+                if location.location_type != "SHOP":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Public shop owner registration can only be linked to a SHOP location.",
+                    )
 
-        new_user = User(
-            name=req.name.strip(),
-            email=req.email.lower().strip(),
-            password_hash=hash_password(req.password),
-            role=role,
-            location_id=location_id,
-            phone=req.phone.strip() if req.phone else None,
-        )
-        created_user = self.user_repo.create(new_user)
+            new_user = User(
+                name=req.name.strip(),
+                email=normalized_email,
+                password_hash=hash_password(req.password),
+                role="SHOP_OWNER",
+                location_id=location_id,
+                phone=req.phone.strip() if req.phone else None,
+            )
+            self.db.add(new_user)
+            self.db.commit()
+            self.db.refresh(new_user)
+        except Exception:
+            self.db.rollback()
+            raise
+
         AuditLogService.log_event(
             event_type="USER_REGISTERED",
-            actor_id=created_user.user_id,
-            actor_role=created_user.role,
+            actor_id=new_user.user_id,
+            actor_role=new_user.role,
             entity_type="USER",
-            entity_id=created_user.user_id,
-            location_id=created_user.location_id,
-            details={"role": created_user.role},
+            entity_id=new_user.user_id,
+            location_id=new_user.location_id,
+            details={"role": new_user.role},
         )
-        return created_user
+        return new_user
 
 
     def login(self, req: UserLoginRequest) -> TokenResponse:

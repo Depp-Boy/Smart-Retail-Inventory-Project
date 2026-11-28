@@ -86,26 +86,10 @@ export function AuthProvider({ children }) {
     return () => { isMounted = false; };
   }, []);
 
-  const login = useCallback(async (email, password, desiredRole) => {
+  const login = useCallback(async (email, password) => {
     setLoading(true);
     try {
-      let tokenResp;
-      try {
-        tokenResp = await api.auth.login(email.trim(), password);
-      } catch (loginErr) {
-        // If login failed for a demo account in development, try seeding demo accounts once
-        const isDemoEmail = email.toLowerCase().includes('@demo.com');
-        if (isDemoEmail) {
-          try {
-            await api.auth.seedDemo();
-            tokenResp = await api.auth.login(email.trim(), password);
-          } catch {
-            throw loginErr;
-          }
-        } else {
-          throw loginErr;
-        }
-      }
+      const tokenResp = await api.auth.login(email.trim(), password);
 
       if (tokenResp?.access_token) {
         setToken(tokenResp.access_token);
@@ -139,21 +123,16 @@ export function AuthProvider({ children }) {
   const register = useCallback(async (formData) => {
     setLoading(true);
     try {
-      // Public registration only allows SHOP_OWNER or WAREHOUSE_MANAGER
-      const role = formData.accountType === 'warehouse' ? 'WAREHOUSE_MANAGER' : 'SHOP_OWNER';
-      const locName = formData.accountType === 'warehouse' ? formData.warehouseName : formData.shopName;
-      const locAddr = formData.accountType === 'warehouse' ? formData.warehouseAddress : formData.shopAddress;
-      const locType = formData.accountType === 'warehouse' ? 'MAIN_WAREHOUSE' : 'SHOP';
-
+      // Public registration is strictly restricted to SHOP_OWNER
       const payload = {
         name: formData.fullName.trim(),
         email: formData.email.toLowerCase().trim(),
         password: formData.password,
-        role,
+        role: 'SHOP_OWNER',
         phone: formData.phone?.trim() || null,
-        location_name: locName?.trim() || null,
-        location_type: locType,
-        location_address: locAddr?.trim() || null,
+        location_name: formData.shopName?.trim() || null,
+        location_type: 'SHOP',
+        location_address: formData.shopAddress?.trim() || null,
       };
 
       const result = await api.auth.register(payload);

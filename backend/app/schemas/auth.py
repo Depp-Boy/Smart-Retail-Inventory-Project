@@ -6,12 +6,12 @@ class UserRegisterRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=255)
     email: EmailStr
     password: str = Field(..., min_length=6, max_length=128)
-    role: str = Field(..., description="SHOP_OWNER, WAREHOUSE_MANAGER, WAREHOUSE_WORKER, or ADMIN")
+    role: str = Field(default="SHOP_OWNER", description="Public registration permits SHOP_OWNER only")
     location_id: Optional[int] = None
     phone: Optional[str] = None
-    location_name: Optional[str] = Field(default=None, max_length=255, description="Auto-create a location for this user if location_id is not provided")
-    location_type: Optional[str] = Field(default=None, description="SHOP or MAIN_WAREHOUSE")
-    location_address: Optional[str] = Field(default=None, description="Address for the auto-created location")
+    location_name: Optional[str] = Field(default=None, max_length=255, description="Auto-create a shop location if location_id is not provided")
+    location_type: Optional[str] = Field(default="SHOP", description="SHOP")
+    location_address: Optional[str] = Field(default=None, description="Address for the auto-created shop location")
 
 
 
